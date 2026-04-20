@@ -173,6 +173,10 @@ export class DoenCard extends LitElement {
     }
   `;
 
+  static getConfigElement() {
+    return document.createElement('doen-card-editor');
+  }
+
   setConfig(config: CardConfig) {
     this._config = config;
   }
