@@ -4,6 +4,9 @@
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
     "@semantic-release/changelog",
+    ["@semantic-release/exec", {
+      "prepareCmd": "npm ci && npm run build"
+    }],
     ["@semantic-release/github", {
       "assets": [{"path": "dist/doen-card.js", "label": "doen-card.js"}]
     }],
