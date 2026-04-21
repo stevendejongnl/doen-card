@@ -6,16 +6,20 @@ interface DoenTask {
   title: string;
   priority: 'none' | 'low' | 'medium' | 'high';
   project_id: string;
+  project_name: string | null;
+  category_name: string | null;
+  category_color: string | null;
+  assignee_name: string | null;
   due_date: string | null;
 }
 
-interface DoenProject {
+interface DoenGroup {
   id: string;
   name: string;
 }
 
 interface CardConfig {
-  project_id?: string;
+  group_id?: string;
   show?: Array<'today' | 'overdue' | 'quick_add'>;
   title?: string;
 }
@@ -88,28 +92,46 @@ export class DoenCard extends LitElement {
 
     .task-row:hover { background: rgba(255,255,255,0.04); }
 
-    .priority-dot {
+    .color-dot {
       width: 6px;
       height: 6px;
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .p-none { background: rgba(255,255,255,0.2); }
-    .p-low  { background: #10b981; }
-    .p-medium { background: #f59e0b; }
-    .p-high { background: #ef4444; }
+
+    .task-main {
+      flex: 1;
+      min-width: 0;
+    }
 
     .task-title {
-      flex: 1;
       font-size: 13px;
       color: var(--primary-text-color);
       line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .task-meta {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .task-meta-item {
+      font-size: 10px;
+      color: var(--secondary-text-color);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .due-label {
       font-size: 11px;
       color: var(--secondary-text-color);
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .due-label.late { color: var(--error-color, #ef4444); }
@@ -197,16 +219,16 @@ export class DoenCard extends LitElement {
   }
 
   private async _load() {
-    const projectId = this._config?.project_id;
-    const path = projectId ? `/ha/card-data?group_id=${projectId}` : '/ha/card-data';
+    const groupId = this._config?.group_id;
+    const path = groupId ? `/ha/card-data?group_id=${groupId}` : '/ha/card-data';
     try {
       const data = await this.hass.callWS<{ today: DoenTask[]; overdue: DoenTask[] }>({
         type: 'doen/api_proxy',
         method: 'GET',
         path,
       });
-      this._today = data.today ?? [];
-      this._overdue = data.overdue ?? [];
+      this._today = data.today;
+      this._overdue = data.overdue;
       this._error = '';
     } catch (e) {
       this._error = `Kan Doen niet bereiken: ${(e as Error).message}`;
@@ -218,9 +240,9 @@ export class DoenCard extends LitElement {
   private async _quickAdd() {
     const title = this._newTitle.trim();
     if (!title || this._adding) return;
-    const projectId = this._config?.project_id;
-    if (!projectId) {
-      this._error = 'Stel een project in via de kaarteditor om taken toe te voegen';
+    const groupId = this._config?.group_id;
+    if (!groupId) {
+      this._error = 'Stel een groep in via de kaarteditor om taken toe te voegen';
       return;
     }
     this._adding = true;
@@ -228,7 +250,7 @@ export class DoenCard extends LitElement {
       await this.hass.callWS({
         type: 'doen/api_proxy',
         method: 'POST',
-        path: `/projects/${projectId}/tasks`,
+        path: `/ha/quick-add?group_id=${groupId}`,
         body: { title },
       });
       this._newTitle = '';
@@ -251,12 +273,31 @@ export class DoenCard extends LitElement {
     };
   }
 
+  private _dotColor(t: DoenTask): string {
+    if (t.category_color) return t.category_color;
+    const map: Record<string, string> = {
+      high: '#ef4444',
+      medium: '#f59e0b',
+      low: '#10b981',
+      none: 'rgba(255,255,255,0.2)',
+    };
+    return map[t.priority] ?? 'rgba(255,255,255,0.2)';
+  }
+
   private _renderTask(t: DoenTask) {
     const due = this._formatDue(t.due_date);
+    const meta = [t.project_name, t.assignee_name].filter(Boolean);
     return html`
       <div class="task-row">
-        <span class="priority-dot p-${t.priority}"></span>
-        <span class="task-title">${t.title}</span>
+        <span class="color-dot" style="background:${this._dotColor(t)}"></span>
+        <span class="task-main">
+          <div class="task-title">${t.title}</div>
+          ${meta.length > 0 ? html`
+            <div class="task-meta">
+              ${meta.map(m => html`<span class="task-meta-item">${m}</span>`)}
+            </div>
+          ` : nothing}
+        </span>
         ${due ? html`<span class="due-label ${due.late ? 'late' : ''}">${due.label}</span>` : nothing}
       </div>
     `;
@@ -321,8 +362,8 @@ export class DoenCard extends LitElement {
 export class DoenCardEditor extends LitElement {
   @property({ attribute: false }) public hass!: Hass;
   @state() private _config: CardConfig = {};
-  @state() private _projects: DoenProject[] = [];
-  @state() private _projectsLoading = true;
+  @state() private _groups: DoenGroup[] = [];
+  @state() private _groupsLoading = true;
 
   static styles = css`
     .form { display: grid; gap: 12px; padding: 16px; }
@@ -345,12 +386,12 @@ export class DoenCardEditor extends LitElement {
 
   async firstUpdated() {
     try {
-      const projects = await this.hass.callWS<DoenProject[]>({ type: 'doen/list_projects' });
-      this._projects = projects;
+      const groups = await this.hass.callWS<DoenGroup[]>({ type: 'doen/list_groups' });
+      this._groups = groups;
     } catch {
-      this._projects = [];
+      this._groups = [];
     } finally {
-      this._projectsLoading = false;
+      this._groupsLoading = false;
     }
   }
 
@@ -363,17 +404,17 @@ export class DoenCardEditor extends LitElement {
     return html`
       <div class="form">
         <div>
-          <label>Project (voor vandaag/achterstallig filter + snel toevoegen)</label>
-          ${this._projectsLoading
+          <label>Groep (filter taken + snel toevoegen)</label>
+          ${this._groupsLoading
             ? html`<select disabled><option>Laden...</option></select>`
             : html`
               <select
-                .value=${this._config.project_id ?? ''}
-                @change=${(e: Event) => this._changed('project_id', (e.target as HTMLSelectElement).value)}
+                .value=${this._config.group_id ?? ''}
+                @change=${(e: Event) => this._changed('group_id', (e.target as HTMLSelectElement).value)}
               >
-                <option value="">Alle projecten</option>
-                ${this._projects.map(p => html`
-                  <option value=${p.id} ?selected=${p.id === this._config.project_id}>${p.name}</option>
+                <option value="">Alle groepen</option>
+                ${this._groups.map(g => html`
+                  <option value=${g.id} ?selected=${g.id === this._config.group_id}>${g.name}</option>
                 `)}
               </select>
             `
