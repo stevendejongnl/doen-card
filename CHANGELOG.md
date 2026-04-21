@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/stevendejongnl/doen-card/compare/v1.0.2...v1.1.0) (2026-04-21)
+
+
+### Features
+
+* group-based filter, category/assignee display, fix editor dropdown ([226873a](https://github.com/stevendejongnl/doen-card/commit/226873abfa34b8d966046792100c9bd17d7554b1))
+
 ## [1.0.2](https://github.com/stevendejongnl/doen-card/compare/v1.0.1...v1.0.2) (2026-04-20)
 
 
